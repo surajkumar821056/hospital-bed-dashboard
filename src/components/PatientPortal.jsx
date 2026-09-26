@@ -1,0 +1,1335 @@
+import React, { useState, useEffect, useRef } from "react";
+import { Search, MapPin, Phone, Mail, Clock, QrCode, Filter, Compass, X, Star, Heart, Navigation, Send, Mic, AlertTriangle } from "lucide-react";
+import QRCodeModal from "./QRCodeModal";
+import { getBedTypeLabel } from "../utils/mockData";
+import { classifyEmergency, predictQueueWaitTime, evaluateHospitalMatching } from "../utils/demandPredictor";
+import { getDynamicAddress } from "../utils/mockData";
+
+// Haversine formula
+export const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c;
+  return parseFloat(d.toFixed(1));
+};
+
+export const calculateDuration = (distance) => {
+  const speedKmh = 35;
+  const timeHours = distance / speedKmh;
+  const timeMinutes = Math.round(timeHours * 60);
+  return timeMinutes < 2 ? 2 : timeMinutes;
+};
+
+export default function PatientPortal({ hospitals, selectedHospital, onSelectHospital, lang, userCoords, setUserCoords, isTrackingGPS, setIsTrackingGPS, setActiveTab, ambulances, sosActive, setSosActive, disasterMode, setDisasterMode, referrals, setReferrals, gpsOrigin }) {
+  const baseLat = gpsOrigin?.lat || 28.6139;
+  const baseLng = gpsOrigin?.lng || 77.2090;
+
+  const PRESETS = [
+    { name: "Current Location", lat: baseLat, lng: baseLng },
+    { name: "Sector Alpha (1.5 km North)", lat: baseLat + 0.012, lng: baseLng },
+    { name: "Sector Beta (2.5 km South)", lat: baseLat - 0.022, lng: baseLng },
+    { name: "East Sector (4.0 km East)", lat: baseLat, lng: baseLng + 0.038 },
+    { name: "West Gate (6.0 km West)", lat: baseLat, lng: baseLng - 0.055 }
+  ];
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [bedFilter, setBedFilter] = useState("all");
+  const [showQR, setShowQR] = useState(false);
+  const [showBookModal, setShowBookModal] = useState(false);
+  const [bookingName, setBookingName] = useState("");
+  const [bookingAge, setBookingAge] = useState("");
+  const [bookingCondition, setBookingCondition] = useState("");
+  const [bookingBedType, setBookingBedType] = useState("icu");
+  const [bookingPulse, setBookingPulse] = useState("80");
+  const [bookingBp, setBookingBp] = useState("120/80");
+  const [bookingSpo2, setBookingSpo2] = useState("97");
+
+  // Redesign filters
+  const [hospType, setHospType] = useState("all"); // all, government, private
+  const [activeSpecialistFilters, setActiveSpecialistFilters] = useState([]); // trauma, cardiac, pediatric
+  const [activeResourceFilters, setActiveResourceFilters] = useState([]); // oxygen, bloodBank, pharmacy
+  const [selectedSymptom, setSelectedSymptom] = useState(null);
+
+  // Triage Chatbot Drawer
+  const [showChatbot, setShowChatbot] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    { sender: "ai", text: "Hello! I am MedResQ AI, your virtual triage agent. What symptoms or emergency are you experiencing?" }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const chatBottomRef = useRef(null);
+
+  useEffect(() => {
+    if (chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [chatMessages, showChatbot]);
+
+  const handleBookingSubmit = (e) => {
+    e.preventDefault();
+    if (!selectedHospital) return;
+    
+    const newRequest = {
+      id: `REF_${Date.now()}`,
+      hospitalId: selectedHospital.id,
+      hospitalName: selectedHospital.name,
+      patientName: bookingName,
+      age: bookingAge,
+      symptom: bookingCondition,
+      bedType: bookingBedType,
+      status: "pending",
+      coords: userCoords,
+      vitals: {
+        pulse: bookingPulse,
+        bp: bookingBp,
+        spo2: bookingSpo2
+      },
+      time: new Date().toLocaleTimeString()
+    };
+    
+    setReferrals(prev => [newRequest, ...prev]);
+    setShowBookModal(false);
+    setBookingName("");
+    setBookingAge("");
+    setBookingCondition("");
+    setBookingPulse("80");
+    setBookingBp("120/80");
+    setBookingSpo2("97");
+  };
+
+  // Static mock mapping details
+  const getStaticHospitalData = (id) => {
+    switch (id) {
+      case "HOSP_001":
+        return {
+          rating: "4.9",
+          waitTime: "12m",
+          specialists: ["Cardiologist", "Neurologist", "ICU Specialist"],
+          logoBg: "#2563eb",
+          type: "government",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_002":
+        return {
+          rating: "4.7",
+          waitTime: "25m",
+          specialists: ["Pediatrician", "Trauma Surgeon", "Orthopedic"],
+          logoBg: "#10b981",
+          type: "government",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_003":
+        return {
+          rating: "4.8",
+          waitTime: "15m",
+          specialists: ["Cardiac Surgeon", "Pulmonologist", "General ICU"],
+          logoBg: "#f59e0b",
+          type: "private",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_004":
+        return {
+          rating: "4.6",
+          waitTime: "8m",
+          specialists: ["Anesthesiologist", "General Surgeon", "Internist"],
+          logoBg: "#8b5cf6",
+          type: "government",
+          resources: ["oxygen", "pharmacy"]
+        };
+      case "HOSP_005":
+        return {
+          rating: "4.5",
+          waitTime: "20m",
+          specialists: ["Trauma Specialist", "Physician", "Cardiac Care"],
+          logoBg: "#ec4899",
+          type: "private",
+          resources: ["oxygen", "pharmacy"]
+        };
+      case "HOSP_006":
+        return {
+          rating: "4.7",
+          waitTime: "10m",
+          specialists: ["ICU Specialist", "Trauma Surgeon", "Orthopedic"],
+          logoBg: "#10b981",
+          type: "private",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_007":
+        return {
+          rating: "4.8",
+          waitTime: "8m",
+          specialists: ["Cardiac Surgeon", "Anesthesiologist", "Pulmonologist"],
+          logoBg: "#ec4899",
+          type: "private",
+          resources: ["oxygen", "pharmacy"]
+        };
+      case "HOSP_008":
+        return {
+          rating: "4.9",
+          waitTime: "6m",
+          specialists: ["Cardiologist", "Pulmonologist", "ICU Specialist"],
+          logoBg: "#3b82f6",
+          type: "private",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_009":
+        return {
+          rating: "4.8",
+          waitTime: "11m",
+          specialists: ["Nephrologist", "Internal Medicine", "ICU Specialist"],
+          logoBg: "#eab308",
+          type: "private",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_010":
+        return {
+          rating: "4.8",
+          waitTime: "9m",
+          specialists: ["Emergency Physician", "Trauma Surgeon", "ICU Specialist"],
+          logoBg: "#a855f7",
+          type: "private",
+          resources: ["oxygen", "bloodBank", "pharmacy"]
+        };
+      case "HOSP_011":
+        return {
+          rating: "4.7",
+          waitTime: "12m",
+          specialists: ["Cardiac Care Specialist", "Interventional Cardiologist"],
+          logoBg: "#ef4444",
+          type: "private",
+          resources: ["oxygen", "pharmacy"]
+        };
+      case "HOSP_012":
+        return {
+          rating: "4.6",
+          waitTime: "14m",
+          specialists: ["General ICU Specialist", "Anesthesiologist"],
+          logoBg: "#f43f5e",
+          type: "private",
+          resources: ["oxygen", "pharmacy"]
+        };
+      default:
+        return {
+          rating: "4.4",
+          waitTime: "15m",
+          specialists: ["General Practitioner"],
+          logoBg: "#6b7280",
+          type: "private",
+          resources: ["oxygen"]
+        };
+    }
+  };
+
+  // Translations
+  const trans = {
+    en: {
+      searchPlaceholder: "Search hospitals by name, area or address...",
+      filterAll: "All Bed Types",
+      availableBeds: "Available Beds",
+      contactInfo: "Hospital Contact Info",
+      bedsBreakdown: "Available Beds Breakdown",
+      travelEst: "Travel Estimation",
+      distance: "Distance",
+      estTime: "Est. Travel Time",
+      expressCheckin: "Express Check-In QR",
+      viewRoute: "View Routing on Map",
+      noHospitals: "No hospitals match your search criteria.",
+      lastUpdated: "Last updated",
+      posSelector: "Patient Coordinates Dispatcher",
+      presetText: "Relocate patient pins to calculate correct drive durations:",
+      mapNotice: "Tip: Click anywhere directly on the map to drop custom pin!"
+    },
+    hi: {
+      searchPlaceholder: "नाम, क्षेत्र या पते के अनुसार अस्पताल खोजें...",
+      filterAll: "सभी बेड प्रकार",
+      availableBeds: "उपलब्ध बेड",
+      contactInfo: "अस्पताल संपर्क जानकारी",
+      bedsBreakdown: "उपलब्ध बेड विवरण",
+      travelEst: "यात्रा अनुमान",
+      distance: "दूरी",
+      estTime: "अनुमानित यात्रा समय",
+      expressCheckin: "एक्सप्रेस चेक-इन क्यूआर",
+      viewRoute: "मानचित्र पर मार्ग देखें",
+      noHospitals: "कोई भी अस्पताल आपके खोज मानदंडों से मेल नहीं खाता है।",
+      lastUpdated: "अंतिम अद्यतन",
+      posSelector: "मरीज निर्देशांक प्रेषण",
+      presetText: "ड्राइव समय की गणना करने के लिए मरीज पिन को स्थानांतरित करें:",
+      mapNotice: "सुझाव: कस्टम पिन डालने के लिए मानचित्र पर कहीं भी क्लिक करें!"
+    }
+  };
+
+  const t = trans[lang] || trans.en;
+
+  const handlePresetChange = (e) => {
+    const val = e.target.value;
+    setIsTrackingGPS(false);
+    
+    if (val === "Current Location") {
+      setIsTrackingGPS(true);
+      setUserCoords({ 
+        lat: baseLat, 
+        lng: baseLng, 
+        name: getDynamicAddress(baseLat, baseLng),
+        accuracy: 100,
+        speed: "0.0",
+        heading: "NE",
+        lastUpdated: new Date().toLocaleTimeString()
+      });
+      return;
+    }
+
+    const matchedPreset = PRESETS.find(p => p.name === val);
+    if (matchedPreset) {
+      setUserCoords({
+        lat: matchedPreset.lat,
+        lng: matchedPreset.lng,
+        name: getDynamicAddress(matchedPreset.lat, matchedPreset.lng),
+        accuracy: 100,
+        speed: "0.0",
+        heading: "NE",
+        lastUpdated: new Date().toLocaleTimeString()
+      });
+    }
+  };
+
+  // Filter hospitals based on advanced parameters
+  const filteredHospitals = hospitals.filter(hospital => {
+    const staticData = getStaticHospitalData(hospital.id);
+    const matchesSearch = 
+      hospital.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      hospital.address.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    let matchesBedFilter = true;
+    if (bedFilter !== "all") {
+      matchesBedFilter = hospital.beds[bedFilter] && hospital.beds[bedFilter].available > 0;
+    }
+
+    let matchesType = true;
+    if (hospType !== "all") {
+      matchesType = staticData.type === hospType;
+    }
+
+    let matchesSpecialist = true;
+    if (activeSpecialistFilters.length > 0) {
+      matchesSpecialist = activeSpecialistFilters.every(f => {
+        if (f === "trauma") return staticData.specialists.some(s => s.toLowerCase().includes("trauma") || s.toLowerCase().includes("surgeon"));
+        if (f === "cardiac") return staticData.specialists.some(s => s.toLowerCase().includes("cardiac") || s.toLowerCase().includes("cardiologist"));
+        if (f === "pediatric") return staticData.specialists.some(s => s.toLowerCase().includes("pediatric") || s.toLowerCase().includes("pediatrician"));
+        return true;
+      });
+    }
+
+    let matchesResources = true;
+    if (activeResourceFilters.length > 0) {
+      matchesResources = activeResourceFilters.every(res => staticData.resources.includes(res));
+    }
+
+    return matchesSearch && matchesBedFilter && matchesType && matchesSpecialist && matchesResources;
+  });
+
+  // Sum beds helpers
+  const getSumAvailableBeds = (beds) => {
+    return Object.values(beds).reduce((acc, b) => acc + (b?.available || 0), 0);
+  };
+  const getSumTotalBeds = (beds) => {
+    return Object.values(beds).reduce((acc, b) => acc + (b?.total || 0), 0);
+  };
+
+  // Global metrics for Hero Section
+  const totalBedsAvailable = hospitals.reduce((acc, h) => acc + getSumAvailableBeds(h.beds), 0);
+  const totalICUAvailable = hospitals.reduce((acc, h) => acc + (h.beds.icu?.available || 0), 0);
+  const totalVentsAvailable = hospitals.reduce((acc, h) => acc + (h.beds.ventilator?.available || 0), 0);
+  const onlineAmbsCount = ambulances ? ambulances.length : 3;
+
+  const getBedsPillClass = (available, total) => {
+    const ratio = available / total;
+    if (ratio <= 0.15) return "low";
+    if (ratio <= 0.45) return "medium";
+    return "high";
+  };
+
+  const isPresetActive = PRESETS.some(p => Math.abs(p.lat - userCoords.lat) < 0.0001 && Math.abs(p.lng - userCoords.lng) < 0.0001);
+
+  // AI Recommendation engine
+  const activeESI = selectedSymptom 
+    ? classifyEmergency(selectedSymptom) 
+    : { category: "ESI-1 (Critical / Cardiac Resuscitation)", recommendedBed: "icu" };
+  const hospitalMatches = evaluateHospitalMatching(userCoords.lat, userCoords.lng, activeESI, hospitals);
+  const aiRec = hospitalMatches[0];
+
+  const handleTriageChoice = (symptom) => {
+    const userMsg = { sender: "user", text: symptom };
+    setChatMessages(prev => [...prev, userMsg]);
+    
+    // Process input using MedResQ Naive Bayes symptom ESI classifier
+    const mlAnalysis = classifyEmergency(symptom);
+    
+    // Suggest optimal hospital based on ESI bed requirements
+    const matches = evaluateHospitalMatching(userCoords.lat, userCoords.lng, mlAnalysis, hospitals);
+    const optimalData = matches[0];
+    const recommendedHosp = optimalData ? optimalData.hospital : hospitals[0];
+    
+    let responseText = "";
+    if (mlAnalysis.isCritical) {
+      responseText = `🚨 [MedResQ AI Triage Classifier: ${mlAnalysis.category}] - CONFIDENCE: ${mlAnalysis.confidence}%\n\nCRITICAL STATE IDENTIFIED. Recommending immediate routing to ${recommendedHosp.name} for specialized ${mlAnalysis.recommendedBed.toUpperCase()} intake (Match Score: ${optimalData ? optimalData.score : 80}%).\n\nKey Match Criteria: ${optimalData ? optimalData.breakdown.join(", ") : ""}\n\nEst. queue wait: ${optimalData ? optimalData.waitTime : 10} minutes. Dispatching ALS ambulance. Please sit down and remain calm.`;
+    } else {
+      responseText = `👨‍⚕️ [MedResQ AI Triage Classifier: ${mlAnalysis.category}] - CONFIDENCE: ${mlAnalysis.confidence}%\n\nCondition classified as stable. Nearest recommended outpatient facility: ${recommendedHosp.name} (Match Score: ${optimalData ? optimalData.score : 70}%).\n\nKey Match Criteria: ${optimalData ? optimalData.breakdown.join(", ") : ""}\n\nProximity: ${optimalData ? optimalData.distance : 5} km (est. wait: ${optimalData ? optimalData.waitTime : 15} mins).`;
+    }
+
+    setTimeout(() => {
+      setChatMessages(prev => [...prev, { sender: "ai", text: responseText }]);
+      if (recommendedHosp) {
+        onSelectHospital(recommendedHosp);
+      }
+    }, 1500);
+  };
+
+  const handleSendChatText = () => {
+    if (!chatInput.trim()) return;
+    const userMsg = { sender: "user", text: chatInput };
+    setChatMessages(prev => [...prev, userMsg]);
+    const query = chatInput;
+    setChatInput("");
+
+    setTimeout(() => {
+      // Process queries through the ML classifier
+      const mlAnalysis = classifyEmergency(query);
+      const matches = evaluateHospitalMatching(userCoords.lat, userCoords.lng, mlAnalysis, hospitals);
+      const optimalData = matches[0];
+      const recommendedHosp = optimalData ? optimalData.hospital : hospitals[0];
+
+      let responseText = "";
+      if (mlAnalysis.isCritical) {
+        responseText = `🚨 [MedResQ AI Triage Classifier: ${mlAnalysis.category}] - CONFIDENCE: ${mlAnalysis.confidence}%\n\nCRITICAL CONTEXT DETECTED. Immediate admission recommended at ${recommendedHosp.name} (matching bed: ${mlAnalysis.recommendedBed.toUpperCase()}) with Match Score: ${optimalData ? optimalData.score : 80}%.\n\nKey Match Criteria: ${optimalData ? optimalData.breakdown.join(", ") : ""}\n\nProximity: ${optimalData ? optimalData.distance : 6} km, est. wait: ${optimalData ? optimalData.waitTime : 12} mins. Calling ambulance dispatch.`;
+      } else {
+        responseText = `👨‍⚕️ [MedResQ AI Triage Classifier: ${mlAnalysis.category}] - CONFIDENCE: ${mlAnalysis.confidence}%\n\nSymptoms categorized as low urgency. Recommending ${recommendedHosp.name} (Match Score: ${optimalData ? optimalData.score : 65}%, general check-in wait: ${optimalData ? optimalData.waitTime : 20} mins).\n\nKey Match Criteria: ${optimalData ? optimalData.breakdown.join(", ") : ""}`;
+      }
+
+      setChatMessages(prev => [...prev, {
+        sender: "ai",
+        text: responseText
+      }]);
+
+      if (recommendedHosp) {
+        onSelectHospital(recommendedHosp);
+      }
+    }, 1500);
+  };
+
+  const simulateVoiceSearch = () => {
+    setIsListeningVoice(true);
+    setTimeout(() => {
+      setIsListeningVoice(false);
+      setSearchTerm("Medanta");
+    }, 1500);
+  };
+
+  return (
+    <div className="split-pane" style={{ height: "100%", overflow: "hidden" }}>
+      {/* Primary listings area */}
+      <div className="pane-primary" style={{ height: "100%", overflowY: "auto", paddingRight: "4px" }}>
+        
+        {/* Landing Page Hero Banner */}
+        <div className="glass" style={{
+          padding: "1.25rem",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.6rem",
+          background: "linear-gradient(135deg, var(--bg-card), var(--primary-glow))",
+          position: "relative",
+          overflow: "hidden",
+          marginBottom: "1rem"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "4px" }}>
+            <span style={{
+              fontSize: "0.6rem",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              color: "var(--primary)",
+              backgroundColor: "var(--primary-glow)",
+              padding: "2px 6px",
+              borderRadius: "4px"
+            }}>
+              MedResQ Health
+            </span>
+            <span style={{ fontSize: "0.6rem", color: "var(--text-secondary)", fontWeight: 600 }}>
+              Serious Care ICU & Ventilator Registry
+            </span>
+          </div>
+
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1.25, margin: "2px 0 0 0" }}>
+            {lang === "hi" ? "आईसीयू और वेंटिलेटर बेड तुरंत खोजें" : "Find Critical Care ICU & Ventilator Beds Instantly"}
+          </h2>
+          
+          <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", lineHeight: 1.4, margin: 0 }}>
+            {lang === "hi" ? "रीयल-टाइम आईसीयू बेड ट्रैकिंग, वेंटिलेटर उपलब्धता, जीवन रक्षक एम्बुलेंस समन्वय और तत्काल अस्पताल में प्रवेश प्रणाली।" : "Real-time critical care ICU bed tracking, ventilator availability, life-saving ambulance dispatch, and immediate hospital admission system."}
+          </p>
+
+          <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+            <button 
+              className="btn btn-primary" 
+              style={{ fontSize: "0.7rem", padding: "6px 12px" }}
+              onClick={() => {
+                const searchInput = document.getElementById("hospital-search-input");
+                if (searchInput) {
+                  searchInput.focus();
+                  searchInput.scrollIntoView({ behavior: "smooth" });
+                }
+              }}
+            >
+              <span>{lang === "hi" ? "अस्पताल खोजें" : "Find Hospital"}</span>
+            </button>
+          </div>
+        </div>
+
+
+
+        {/* Global Hero Metrics Strip */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px", marginBottom: "1rem" }}>
+          <div className="glass" style={{ padding: "8px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", textAlign: "center" }}>
+            <span style={{ fontSize: "0.6rem", color: "var(--text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>Beds Live</span>
+            <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "var(--primary)", marginTop: "2px" }}>{totalBedsAvailable}</div>
+          </div>
+          <div className="glass" style={{ padding: "8px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)", textAlign: "center" }}>
+            <span style={{ fontSize: "0.6rem", color: "var(--text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>ICU Available</span>
+            <div style={{ fontSize: "1.1rem", fontWeight: 900, color: "var(--success)", marginTop: "2px" }}>{totalICUAvailable}</div>
+          </div>
+        </div>
+
+        {/* Serious Emergency / Critical Condition Selector */}
+        <div className="glass" style={{
+          padding: "1rem",
+          borderRadius: "var(--radius-lg)",
+          border: "1.5px dashed var(--danger)",
+          background: "rgba(239, 68, 68, 0.03)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          marginBottom: "1rem"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "1.1rem" }}>🚨</span>
+            <strong style={{ fontSize: "0.85rem", color: "var(--text-primary)", letterSpacing: "0.5px" }}>
+              {lang === "en" ? "CRITICAL EMERGENCY SYMPTOM FILTER" : "गंभीर आपातकालीन स्थिति फ़िल्टर"}
+            </strong>
+          </div>
+          <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", margin: 0 }}>
+            {lang === "en" 
+              ? "Select an emergency to automatically search, sort, and recommend the nearest hospital with available specialized beds." 
+              : "स्वचालित रूप से विशिष्ट उपलब्ध बेड वाले निकटतम अस्पताल को खोजने और उसकी अनुशंसा करने के लिए एक आपातकालीन स्थिति चुनें।"}
+          </p>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "4px" }}>
+            <button
+              onClick={() => setSelectedSymptom("cardiac arrest chest pain stroke")}
+              className="btn"
+              style={{
+                fontSize: "0.7rem",
+                padding: "8px 6px",
+                borderRadius: "var(--radius-md)",
+                border: selectedSymptom === "cardiac arrest chest pain stroke" ? "2px solid var(--danger)" : "1px solid var(--border)",
+                backgroundColor: selectedSymptom === "cardiac arrest chest pain stroke" ? "rgba(239, 68, 68, 0.15)" : "var(--surface)",
+                color: "var(--text-primary)",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "4px",
+                transition: "all 0.2s"
+              }}
+            >
+              ❤️ {lang === "en" ? "Heart Attack / Stroke" : "हृदय आघात / स्ट्रोक"}
+            </button>
+            <button
+              onClick={() => setSelectedSymptom("severe breathing asthma accident trauma")}
+              className="btn"
+              style={{
+                fontSize: "0.7rem",
+                padding: "8px 6px",
+                borderRadius: "var(--radius-md)",
+                border: selectedSymptom === "severe breathing asthma accident trauma" ? "2px solid var(--warning)" : "1px solid var(--border)",
+                backgroundColor: selectedSymptom === "severe breathing asthma accident trauma" ? "rgba(245, 158, 11, 0.15)" : "var(--surface)",
+                color: "var(--text-primary)",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "4px",
+                transition: "all 0.2s"
+              }}
+            >
+              🫁 {lang === "en" ? "Breathing / Trauma" : "सांस की तकलीफ / आघात"}
+            </button>
+            <button
+              onClick={() => setSelectedSymptom("child baby pediatric infant fever")}
+              className="btn"
+              style={{
+                fontSize: "0.7rem",
+                padding: "8px 6px",
+                borderRadius: "var(--radius-md)",
+                border: selectedSymptom === "child baby pediatric infant fever" ? "2px solid var(--primary)" : "1px solid var(--border)",
+                backgroundColor: selectedSymptom === "child baby pediatric infant fever" ? "rgba(37, 99, 235, 0.15)" : "var(--surface)",
+                color: "var(--text-primary)",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "4px",
+                transition: "all 0.2s"
+              }}
+            >
+              👶 {lang === "en" ? "Pediatric Emergency" : "बच्चों की आपातकालीन"}
+            </button>
+            <button
+              onClick={() => setSelectedSymptom(null)}
+              className="btn"
+              style={{
+                fontSize: "0.7rem",
+                padding: "8px 6px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--border)",
+                backgroundColor: selectedSymptom === null ? "var(--surface-hover)" : "var(--surface)",
+                color: selectedSymptom === null ? "var(--text-muted)" : "var(--danger)",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "4px",
+                opacity: selectedSymptom === null ? 0.6 : 1,
+                transition: "all 0.2s"
+              }}
+              disabled={selectedSymptom === null}
+            >
+              ❌ {lang === "en" ? "Reset Filter" : "फ़िल्टर हटाएं"}
+            </button>
+          </div>
+        </div>
+
+        {/* AI recommended hospital highlight */}
+        {aiRec && (
+          <div className="glass" style={{
+            padding: "1rem",
+            borderRadius: "var(--radius-lg)",
+            border: "1.5px solid var(--success-border)",
+            background: "linear-gradient(135deg, var(--success-bg), var(--bg-card))",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            marginBottom: "1rem"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "6px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "1.1rem" }}>🤖</span>
+                <strong style={{ fontSize: "0.8rem", color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.02em" }}>MedResQ AI Optimal Facility Recommendation</strong>
+              </div>
+              <span style={{ backgroundColor: "var(--success-bg)", color: "var(--success)", padding: "2px 8px", borderRadius: "6px", fontSize: "0.78rem", fontWeight: 900 }}>
+                {aiRec.score}% Suitability Match
+              </span>
+            </div>
+            <div>
+              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800 }}>{aiRec.hospital.name}</h4>
+              <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)", margin: "2.5px 0 0 0", lineHeight: 1.35 }}>
+                ICU setup selected. Proximity: <strong>{aiRec.distance} km</strong> (est. drive <strong>{calculateDuration(aiRec.distance)} mins</strong>).
+                Specialist wait time: <strong>{aiRec.waitTime} mins</strong>.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>
+                {aiRec.breakdown && aiRec.breakdown.map((item, idx) => (
+                  <span key={idx} style={{ fontSize: "0.62rem", color: "var(--text-secondary)", backgroundColor: "var(--surface-hover)", padding: "2px 6px", borderRadius: "4px", border: "1px solid var(--border)" }}>
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+              <button className="btn btn-primary" style={{ backgroundColor: "var(--success)", border: "none", fontSize: "0.7rem", padding: "4px 10px" }} onClick={() => onSelectHospital(aiRec.hospital)}>
+                Select & Review
+              </button>
+            </div>
+          </div>
+        )}
+
+
+
+        {/* Search and Filters */}
+        <div className="search-bar-container" style={{ marginBottom: "1rem" }}>
+          <div className="search-input-wrapper">
+            <Search size={18} />
+            <input
+              type="text"
+              id="hospital-search-input"
+              className="search-input"
+              placeholder={t.searchPlaceholder}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <button 
+              onClick={simulateVoiceSearch} 
+              style={{ background: "transparent", border: "none", color: isListeningVoice ? "var(--danger)" : "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center" }}
+              title="Voice Search"
+            >
+              <Mic size={16} style={{ animation: isListeningVoice ? "pulse 1s infinite" : "none" }} />
+            </button>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <Filter size={16} className="text-secondary" />
+            
+            {/* Primary Bed Type filter */}
+            <select 
+              className="select-filter"
+              value={bedFilter}
+              onChange={(e) => setBedFilter(e.target.value)}
+              style={{ fontSize: "0.75rem" }}
+            >
+              <option value="all">{t.filterAll}</option>
+              <option value="general">{lang === "hi" ? "सामान्य बेड" : "General Beds"}</option>
+              <option value="icu">{lang === "hi" ? "आईसीयू बेड" : "ICU Beds"}</option>
+              <option value="ventilator">{lang === "hi" ? "वेंटिलेटर बेड" : "Ventilator Beds"}</option>
+              <option value="isolation">{lang === "hi" ? "आइसोलेशन बेड" : "Isolation Beds"}</option>
+            </select>
+
+            {/* Gov/Private Filter */}
+            <select 
+              className="select-filter"
+              value={hospType}
+              onChange={(e) => setHospType(e.target.value)}
+              style={{ fontSize: "0.75rem" }}
+            >
+              <option value="all">Govt & Private</option>
+              <option value="government">Government Only</option>
+              <option value="private">Private Only</option>
+            </select>
+          </div>
+
+          {/* Advanced Specialty Checkboxes */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "4px" }}>
+            {["trauma", "cardiac", "pediatric"].map(spec => (
+              <button
+                key={spec}
+                className="btn btn-secondary"
+                style={{
+                  fontSize: "0.65rem",
+                  padding: "4px 8px",
+                  backgroundColor: activeSpecialistFilters.includes(spec) ? "var(--primary-glow)" : "var(--surface)",
+                  color: activeSpecialistFilters.includes(spec) ? "var(--primary)" : "var(--text-primary)",
+                  border: activeSpecialistFilters.includes(spec) ? "1px solid var(--primary)" : "1px solid var(--border)",
+                  borderRadius: "6px"
+                }}
+                onClick={() => {
+                  if (activeSpecialistFilters.includes(spec)) {
+                    setActiveSpecialistFilters(prev => prev.filter(f => f !== spec));
+                  } else {
+                    setActiveSpecialistFilters(prev => [...prev, spec]);
+                  }
+                }}
+              >
+                {spec === "trauma" ? "Trauma Center" : spec === "cardiac" ? "Cardiac Center" : "Pediatric ICU"}
+              </button>
+            ))}
+          </div>
+
+          {/* Resources checklist */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "2px" }}>
+            {["oxygen", "bloodBank", "pharmacy"].map(res => (
+              <button
+                key={res}
+                className="btn btn-secondary"
+                style={{
+                  fontSize: "0.65rem",
+                  padding: "4px 8px",
+                  backgroundColor: activeResourceFilters.includes(res) ? "var(--primary-glow)" : "var(--surface)",
+                  color: activeResourceFilters.includes(res) ? "var(--primary)" : "var(--text-primary)",
+                  border: activeResourceFilters.includes(res) ? "1px solid var(--primary)" : "1px solid var(--border)",
+                  borderRadius: "6px"
+                }}
+                onClick={() => {
+                  if (activeResourceFilters.includes(res)) {
+                    setActiveResourceFilters(prev => prev.filter(f => f !== res));
+                  } else {
+                    setActiveResourceFilters(prev => [...prev, res]);
+                  }
+                }}
+              >
+                {res === "oxygen" ? "Oxygen Avail." : res === "bloodBank" ? "Blood Bank" : "Pharmacy Avail."}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Listings */}
+        <div className="hospital-list" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {filteredHospitals.length === 0 ? (
+            <div className="glass" style={{ padding: '2rem', textAlign: 'center', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)' }}>
+              {t.noHospitals}
+            </div>
+          ) : (
+            [...filteredHospitals]
+              .sort((a, b) => {
+                const bedType = activeESI.recommendedBed;
+                const availableA = a.beds[bedType]?.available > 0 ? 1 : 0;
+                const availableB = b.beds[bedType]?.available > 0 ? 1 : 0;
+                if (availableA !== availableB) {
+                  return availableB - availableA;
+                }
+                const distA = calculateDistance(userCoords.lat, userCoords.lng, a.lat, a.lng);
+                const distB = calculateDistance(userCoords.lat, userCoords.lng, b.lat, b.lng);
+                return distA - distB;
+              })
+              .map(hospital => {
+              const available = getSumAvailableBeds(hospital.beds);
+              const total = getSumTotalBeds(hospital.beds);
+              const dist = calculateDistance(userCoords.lat, userCoords.lng, hospital.lat, hospital.lng);
+              const isSelected = selectedHospital && selectedHospital.id === hospital.id;
+              const staticData = getStaticHospitalData(hospital.id);
+
+              return (
+                <div 
+                  key={hospital.id}
+                  className={`hospital-card ${isSelected ? 'selected' : ''}`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                    padding: "1rem",
+                    borderRadius: "var(--radius-lg)",
+                    border: "1px solid var(--border)",
+                    cursor: "pointer"
+                  }}
+                  onClick={() => onSelectHospital(hospital)}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      <div style={{
+                        width: "36px",
+                        height: "36px",
+                        borderRadius: "8px",
+                        backgroundColor: staticData.logoBg,
+                        color: "#ffffff",
+                        fontWeight: 800,
+                        fontSize: "0.9rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}>
+                        {hospital.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: "0.85rem", fontWeight: 700 }}>{hospital.name}</h4>
+                        <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)", textTransform: "capitalize" }}>
+                          {staticData.type} • {staticData.specialists.slice(0, 2).join(", ")}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px", backgroundColor: "var(--primary-glow)", color: "var(--primary)", padding: "2px 6px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 700 }}>
+                      <Star size={12} fill="currentColor" />
+                      <span>{staticData.rating}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", padding: "8px 0" }}>
+                    <div style={{ textAlign: "center", backgroundColor: hospital.beds.icu?.available > 0 ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)", padding: "4px", borderRadius: "6px" }}>
+                      <span style={{ fontSize: "0.52rem", color: hospital.beds.icu?.available > 0 ? "var(--success)" : "var(--danger)", textTransform: "uppercase", fontWeight: 700 }}>ICU Beds</span>
+                      <div style={{ fontSize: "0.8rem", fontWeight: 900, color: hospital.beds.icu?.available > 0 ? "var(--success)" : "var(--danger)" }}>
+                        {hospital.beds.icu?.available || 0} Avail
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "center", backgroundColor: hospital.beds.ventilator?.available > 0 ? "rgba(37, 99, 235, 0.08)" : "rgba(239, 68, 68, 0.08)", padding: "4px", borderRadius: "6px" }}>
+                      <span style={{ fontSize: "0.52rem", color: hospital.beds.ventilator?.available > 0 ? "var(--primary)" : "var(--danger)", textTransform: "uppercase", fontWeight: 700 }}>Ventilators</span>
+                      <div style={{ fontSize: "0.8rem", fontWeight: 900, color: hospital.beds.ventilator?.available > 0 ? "var(--primary)" : "var(--danger)" }}>
+                        {hospital.beds.ventilator?.available || 0} Avail
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "center", backgroundColor: "var(--surface-hover)", padding: "4px", borderRadius: "6px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                      <span style={{ fontSize: "0.52rem", color: "var(--text-secondary)", textTransform: "uppercase", fontWeight: 700 }}>ER Wait</span>
+                      <div style={{ fontSize: "0.8rem", fontWeight: 900, color: "var(--text-primary)" }}>
+                        {staticData.waitTime}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.65rem", color: "var(--text-secondary)" }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <MapPin size={12} />
+                      {dist} km ({calculateDuration(dist)} mins drive)
+                    </span>
+                    <span>
+                      {t.lastUpdated}: {new Date(hospital.lastUpdated).toLocaleTimeString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Details Side Panel */}
+      {selectedHospital && (
+        <div className="pane-secondary" style={{ height: "100%", overflowY: "auto" }}>
+          <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+            <div style={{ paddingRight: '20px' }}>
+              <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                {selectedHospital.name}
+              </h3>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                <MapPin size={12} /> {selectedHospital.address}
+              </span>
+            </div>
+            <button 
+              onClick={() => onSelectHospital(null)} 
+              className="btn btn-secondary btn-icon-only" 
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: 'none',
+                marginTop: '-4px'
+              }}
+              title="Close Details / Show All on Map"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="panel-body">
+            {/* Contact Info Block */}
+            <div>
+              <div className="section-title">{t.contactInfo}</div>
+              <div className="contact-info-block">
+                <div className="contact-row">
+                  <Phone size={14} />
+                  <span>{selectedHospital.phone}</span>
+                </div>
+                <div className="contact-row">
+                  <Mail size={14} />
+                  <span>{selectedHospital.email}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Travel Estimate */}
+            <div>
+              <div className="section-title">{t.travelEst}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div className="contact-info-block" style={{ alignItems: 'center', padding: '10px 0' }}>
+                  <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                    {t.distance}
+                  </span>
+                  <strong style={{ fontSize: '1.25rem', color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>
+                    {calculateDistance(userCoords.lat, userCoords.lng, selectedHospital.lat, selectedHospital.lng)} km
+                  </strong>
+                </div>
+                <div className="contact-info-block" style={{ alignItems: 'center', padding: '10px 0' }}>
+                  <span style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                    {t.estTime}
+                  </span>
+                  <strong style={{ fontSize: '1.25rem', color: 'var(--success)', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={16} />
+                    {calculateDuration(calculateDistance(userCoords.lat, userCoords.lng, selectedHospital.lat, selectedHospital.lng))} min
+                  </strong>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                <a 
+                  href={`https://www.google.com/maps/dir/?api=1&origin=${userCoords.lat},${userCoords.lng}&destination=${selectedHospital.lat},${selectedHospital.lng}&travelmode=driving`}
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                  style={{ fontSize: "0.75rem", padding: "6px", textDecoration: "none", textAlign: "center" }}
+                >
+                  <span style={{ color: "var(--primary)", fontWeight: 700 }}>Google Maps ↗</span>
+                </a>
+                <a 
+                  href={`https://maps.apple.com/?saddr=${userCoords.lat},${userCoords.lng}&daddr=${selectedHospital.lat},${selectedHospital.lng}&dirflg=d`}
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                  style={{ fontSize: "0.75rem", padding: "6px", textDecoration: "none", textAlign: "center" }}
+                >
+                  <span style={{ color: "var(--text-primary)", fontWeight: 700 }}>Apple Maps ↗</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Hospital Resources & Operations */}
+            <div>
+              <div className="section-title">Operations & Critical Resources</div>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "8px",
+                fontSize: "0.72rem",
+                backgroundColor: "var(--surface-hover)",
+                padding: "10px",
+                borderRadius: "8px",
+                border: "1px solid var(--border)",
+                marginBottom: "12px"
+              }}>
+                <div>
+                  <span style={{ color: "var(--text-secondary)" }}>Oxygen Reserve:</span>
+                  <div style={{ fontWeight: 700, color: "var(--success)" }}>🟢 98% Saturation</div>
+                </div>
+                <div>
+                  <span style={{ color: "var(--text-secondary)" }}>Blood Bank:</span>
+                  <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>🟢 A+, B+, O+ Stocked</div>
+                </div>
+                <div>
+                  <span style={{ color: "var(--text-secondary)" }}>On-Duty Doctors:</span>
+                  <div style={{ fontWeight: 700, color: "var(--primary)" }}>8 Specialists Active</div>
+                </div>
+                <div>
+                  <span style={{ color: "var(--text-secondary)" }}>Operation Theatres:</span>
+                  <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>2/4 Available</div>
+                </div>
+                <div style={{ gridColumn: "span 2" }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Pharmacy Status:</span>
+                  <div style={{ fontWeight: 700, color: "var(--success)" }}>🟢 Open 24/7 (In-house Stocked)</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Bed Breakdown Progress Bars */}
+            <div>
+              <div className="section-title">{t.bedsBreakdown}</div>
+              <div className="bed-breakdown-list">
+                {Object.entries(selectedHospital.beds).filter(([_, val]) => val !== null).map(([key, value]) => {
+                  const percent = value.total > 0 ? (value.available / value.total) * 100 : 0;
+                  let colorClass = "success";
+                  if (percent <= 15) {
+                    colorClass = "danger";
+                  } else if (percent <= 45) {
+                    colorClass = "warning";
+                  }
+
+                  return (
+                    <div key={key} className="bed-row">
+                      <div className="bed-row-header">
+                        <span className="bed-row-name">{getBedTypeLabel(key)}</span>
+                        <span className="bed-row-count">
+                          {value.available} <span style={{ opacity: 0.5, fontWeight: 400 }}>/ {value.total}</span>
+                        </span>
+                      </div>
+                      <div className="progress-track">
+                        <div 
+                          className={`progress-bar ${colorClass}`}
+                          style={{ width: `${percent}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="panel-footer" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <a href={`tel:${selectedHospital.phone}`} className="btn btn-secondary" style={{ textDecoration: "none", textAlign: "center", fontSize: "0.8rem", width: "100%" }}>
+              <span>📞 CALL HOSPITAL</span>
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* AI Triage Floating Button */}
+      <button 
+        style={{
+          position: "fixed",
+          bottom: "80px",
+          right: "20px",
+          width: "56px",
+          height: "56px",
+          borderRadius: "50%",
+          backgroundColor: "var(--primary)",
+          color: "#ffffff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 4px 12px rgba(37,99,235,0.4)",
+          border: "none",
+          cursor: "pointer",
+          zIndex: 9999
+        }}
+        onClick={() => setShowChatbot(!showChatbot)}
+        className="sos-pulse-effect"
+        title="MedResQ AI Triage Assistant"
+      >
+        <span style={{ fontSize: "1.5rem" }}>💬</span>
+      </button>
+
+      {/* AI Chatbot Drawer Overlay */}
+      {showChatbot && (
+        <div className="glass" style={{
+          position: "fixed",
+          bottom: "145px",
+          right: "20px",
+          width: "320px",
+          height: "400px",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow-lg)",
+          backgroundColor: "var(--surface)",
+          display: "flex",
+          flexDirection: "column",
+          zIndex: 9999,
+          overflow: "hidden"
+        }}>
+          {/* Chat header */}
+          <div style={{
+            padding: "10px 12px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            backgroundColor: "var(--primary-glow)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "1.2rem" }}>🤖</span>
+              <strong style={{ fontSize: "0.8rem", color: "var(--text-primary)" }}>MedResQ AI Triage</strong>
+            </div>
+            <button 
+              onClick={() => setShowChatbot(false)}
+              style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer" }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Chat scroll content */}
+          <div style={{ flex: 1, padding: "10px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+            {chatMessages.map((msg, idx) => (
+              <div 
+                key={idx} 
+                style={{
+                  alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
+                  backgroundColor: msg.sender === "user" ? "var(--primary)" : "var(--surface-hover)",
+                  color: msg.sender === "user" ? "#ffffff" : "var(--text-primary)",
+                  padding: "8px 12px",
+                  borderRadius: "12px",
+                  maxWidth: "85%",
+                  fontSize: "0.75rem",
+                  lineHeight: 1.4
+                }}
+              >
+                {msg.text}
+              </div>
+            ))}
+            <div ref={chatBottomRef}></div>
+          </div>
+
+          {/* Symptom quick chips */}
+          <div style={{ padding: "6px", display: "flex", gap: "6px", overflowX: "auto", borderTop: "1px solid var(--border)", backgroundColor: "var(--surface-hover)" }}>
+            {["🚨 Chest Pain", "💨 Breathing Issue", "🤕 High Fever"].map(symp => (
+              <button 
+                key={symp} 
+                className="btn btn-secondary" 
+                style={{ fontSize: "0.6rem", padding: "4px 8px", whiteSpace: "nowrap", flexShrink: 0 }}
+                onClick={() => handleTriageChoice(symp)}
+              >
+                {symp}
+              </button>
+            ))}
+          </div>
+
+          {/* Input block */}
+          <div style={{ padding: "8px", borderTop: "1px solid var(--border)", display: "flex", gap: "6px", alignItems: "center" }}>
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="Describe symptoms..." 
+              value={chatInput} 
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSendChatText()}
+              style={{ flex: 1, fontSize: "0.75rem", padding: "6px 10px" }}
+            />
+            <button className="btn btn-primary" style={{ padding: "6px" }} onClick={handleSendChatText}>
+              <Send size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* QR checkin modal overlay */}
+      {showQR && selectedHospital && (
+        <QRCodeModal
+          hospital={selectedHospital}
+          onClose={() => setShowQR(false)}
+          lang={lang}
+        />
+      )}
+
+      {/* Booking / Referral Request Modal */}
+      {showBookModal && selectedHospital && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          backgroundColor: "rgba(0, 0, 0, 0.6)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 99999,
+          padding: "1rem"
+        }}>
+          <div className="glass" style={{
+            width: "100%",
+            maxWidth: "420px",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--surface)",
+            padding: "1.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1rem",
+            boxShadow: "var(--shadow-lg)"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "8px" }}>
+              <strong style={{ fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                🚑 Emergency Bed Request Form
+              </strong>
+              <button 
+                onClick={() => setShowBookModal(false)}
+                style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", fontSize: "1.1rem" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", margin: 0, lineHeight: 1.4 }}>
+              Requesting emergency admission at <strong>{selectedHospital.name}</strong>. Your current GPS position will be sent to their dispatch terminal.
+            </p>
+
+            <form onSubmit={handleBookingSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <label style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-secondary)" }}>PATIENT FULL NAME</label>
+                <input 
+                  type="text" 
+                  required 
+                  className="form-input" 
+                  placeholder="e.g. Rajesh Kumar" 
+                  value={bookingName}
+                  onChange={(e) => setBookingName(e.target.value)}
+                  style={{ fontSize: "0.75rem", padding: "8px" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
+                  <label style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-secondary)" }}>AGE</label>
+                  <input 
+                    type="number" 
+                    required 
+                    className="form-input" 
+                    placeholder="e.g. 45" 
+                    value={bookingAge}
+                    onChange={(e) => setBookingAge(e.target.value)}
+                    style={{ fontSize: "0.75rem", padding: "8px" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 2 }}>
+                  <label style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-secondary)" }}>BED TYPE REQUIRED</label>
+                  <select 
+                    className="select-filter"
+                    value={bookingBedType}
+                    onChange={(e) => setBookingBedType(e.target.value)}
+                    style={{ width: "100%", fontSize: "0.75rem", padding: "8px" }}
+                  >
+                    <option value="icu">ICU Bed</option>
+                    <option value="ventilator">Ventilator Setup</option>
+                    <option value="general">General Bed</option>
+                    <option value="picu">Pediatric ICU</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Patient Vitals Inputs */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "0.62rem", fontWeight: 700, color: "var(--text-secondary)" }}>PULSE (BPM)</label>
+                  <input 
+                    type="number" 
+                    required 
+                    className="form-input" 
+                    placeholder="80" 
+                    value={bookingPulse}
+                    onChange={(e) => setBookingPulse(e.target.value)}
+                    style={{ fontSize: "0.75rem", padding: "6px" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "0.62rem", fontWeight: 700, color: "var(--text-secondary)" }}>BLOOD PRESS.</label>
+                  <input 
+                    type="text" 
+                    required 
+                    className="form-input" 
+                    placeholder="120/80" 
+                    value={bookingBp}
+                    onChange={(e) => setBookingBp(e.target.value)}
+                    style={{ fontSize: "0.75rem", padding: "6px" }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <label style={{ fontSize: "0.62rem", fontWeight: 700, color: "var(--text-secondary)" }}>O2 SAT (SPO2 %)</label>
+                  <input 
+                    type="number" 
+                    required 
+                    className="form-input" 
+                    placeholder="98" 
+                    value={bookingSpo2}
+                    onChange={(e) => setBookingSpo2(e.target.value)}
+                    style={{ fontSize: "0.75rem", padding: "6px" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <label style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--text-secondary)" }}>SYMPTOMS & CONDITION DESCRIPTION</label>
+                <textarea 
+                  required 
+                  className="form-input" 
+                  placeholder="Describe patient condition, e.g., severe breathing difficulty, chest pain" 
+                  value={bookingCondition}
+                  onChange={(e) => setBookingCondition(e.target.value)}
+                  rows="3"
+                  style={{ fontSize: "0.75rem", padding: "8px", resize: "none", fontFamily: "inherit" }}
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                className="btn btn-primary"
+                style={{ width: "100%", padding: "10px", fontWeight: 800, backgroundColor: "var(--danger)", border: "none", color: "#ffffff", marginTop: "4px" }}
+              >
+                🚨 SUBMIT EMERGENCY ADMISSION REQUEST
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
