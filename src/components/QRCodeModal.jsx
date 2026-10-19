@@ -71,10 +71,10 @@ export default function QRCodeModal({ hospital, onClose, lang }) {
 
   const trans = {
     en: {
-      title: "Express Admission QR Code",
-      subtitle: "Scan at emergency kiosk to automatically check-in.",
+      title: "Demo QR Illustration",
+      subtitle: "Illustration only. Admission is confirmed by a hospital administrator.",
       hospital: "Hospital",
-      admit: "Ready for Check-In",
+      admit: "No kiosk connection",
       close: "Close"
     },
     hi: {

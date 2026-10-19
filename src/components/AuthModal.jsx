@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { api } from "../api/client";
 import { X, User, ShieldAlert, LogIn, Lock, Phone, Mail } from "lucide-react";
 
 export default function AuthModal({ isOpen, onClose, onLoginSuccess, lang }) {
@@ -16,76 +17,44 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, lang }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  if (!isOpen) return null;
 
-  const handleSendOtp = (e) => {
-    e.preventDefault();
-    if (!phone || phone.length < 10) {
-      setError(lang === "hi" ? "कृपया एक मान्य 10-अंकीय मोबाइल नंबर दर्ज करें।" : "Please enter a valid 10-digit mobile number.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      setOtpSent(true);
-    }, 800);
+  const [developmentCode, setDevelopmentCode] = useState("");
+  const handleSendOtp = async e => {
+    e.preventDefault(); setError(""); setLoading(true);
+    try {
+      const result = await api.sendOtp(phone);
+      setDevelopmentCode(result.developmentCode || ""); setOtpSent(true);
+    } catch (error) { setError(error.message); }
+    finally { setLoading(false); }
   };
-
-  const handlePatientLogin = (e) => {
-    e.preventDefault();
-    if (!otp) {
-      setError(lang === "hi" ? "कृपया प्राप्त ओटीपी दर्ज करें।" : "Please enter the OTP sent to your phone.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      onLoginSuccess({
-        name: "Srotrai",
-        email: `+91 ${phone.substring(0, 5)} ${phone.substring(5)}`,
-        role: "patient"
-      });
-      resetForm();
-      onClose();
-    }, 800);
+  const handlePatientLogin = async e => {
+    e.preventDefault(); setError(""); setLoading(true);
+    try {
+      const user = await api.verifyOtp(phone, otp);
+      await onLoginSuccess(user); resetForm(); onClose();
+    } catch (error) { setError(error.message); }
+    finally { setLoading(false); }
   };
-
-  const handleAdminLogin = (e) => {
-    e.preventDefault();
-    if (!email || !pin) {
-      setError(lang === "hi" ? "कृपया सभी फ़ील्ड भरें।" : "Please enter both credentials.");
-      return;
-    }
-    if (email.toLowerCase().trim() !== "admin@medresq.gov" || pin !== "admin") {
-      setError(lang === "hi" ? "अमान्य विवरण। कृपया admin@medresq.gov और admin पासवर्ड का उपयोग करें।" : "Invalid credentials. Use admin@medresq.gov / admin.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      onLoginSuccess({
-        name: "Officer",
-        email: email,
-        role: "admin"
-      });
-      resetForm();
-      onClose();
-      // Redirect to #admin
-      window.location.hash = "admin";
-    }, 800);
+  const handleAdminLogin = async e => {
+    e.preventDefault(); setError(""); setLoading(true);
+    try {
+      const user = await api.login(email, pin);
+      await onLoginSuccess(user); resetForm(); onClose(); window.location.hash = "admin";
+    } catch (error) { setError(error.message); }
+    finally { setLoading(false); }
   };
 
   const resetForm = () => {
     setPhone("");
     setOtp("");
     setOtpSent(false);
+    setDevelopmentCode("");
     setEmail("");
     setPin("");
     setError("");
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" style={{ zIndex: 99999 }}>
@@ -224,7 +193,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, lang }) {
                   />
                 </div>
                 <span style={{ fontSize: "0.6rem", color: "var(--success)", fontWeight: 600, marginTop: "2px" }}>
-                  🟢 Test SMS OTP simulated. Type any digit code to login.
+                  🟢 Development only: code {developmentCode}. No SMS was sent.
                 </span>
               </div>
             )}
@@ -304,7 +273,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess, lang }) {
                 />
               </div>
               <span style={{ fontSize: "0.6rem", color: "var(--success)", fontWeight: 600, marginTop: "2px" }}>
-                🟢 Demo credentials - User ID: admin@medresq.gov | Password: admin
+                🟢 Local development: admin@medresq.gov / admin. Deployment uses configured credentials.
               </span>
             </div>
 

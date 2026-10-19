@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import L from "leaflet";
+const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
 export default function MapView({ hospitals, selectedHospital, onSelectHospital, showRouting, userCoords, onMapClick, ambulances, sosActive }) {
   const mapContainerRef = useRef(null);
@@ -16,8 +17,8 @@ export default function MapView({ hospitals, selectedHospital, onSelectHospital,
   // Map settings
   const [mapType, setMapType] = useState("osm");
   const [mapSearch, setMapSearch] = useState("");
-  const [showTraffic, setShowTraffic] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showTraffic, setShowTraffic] = useState(false);
+  const [showHeatmap] = useState(false);
 
   // Keep a fresh reference to map click callback
   const onMapClickRef = useRef(onMapClick);
@@ -175,8 +176,8 @@ export default function MapView({ hospitals, selectedHospital, onSelectHospital,
         .addTo(map)
         .bindPopup(`
           <div style="font-family: var(--font-sans); width: 220px; padding: 4px;">
-            <strong style="color: var(--text-primary); font-size: 0.9rem;">${hospital.name}</strong>
-            <p style="color: var(--text-secondary); font-size: 0.7rem; margin: 4px 0 8px 0;">${hospital.address}</p>
+            <strong style="color: var(--text-primary); font-size: 0.9rem;">${escapeHtml(hospital.name)}</strong>
+            <p style="color: var(--text-secondary); font-size: 0.7rem; margin: 4px 0 8px 0;">${escapeHtml(hospital.address)}</p>
             <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; border-top: 1px solid var(--border); padding-top: 6px;">
               <span>Available ICU Beds:</span>
               <span style="font-family: var(--font-mono); color: ${hospital.beds.icu.available <= 1 ? 'var(--danger)' : 'var(--success)'}">${hospital.beds.icu.available}/${hospital.beds.icu.total}</span>
@@ -236,12 +237,10 @@ export default function MapView({ hospitals, selectedHospital, onSelectHospital,
 
       const popupHtml = `
         <div style="font-family: var(--font-sans); font-size: 0.72rem; padding: 2px;">
-          <strong style="color: var(--text-primary);">${name}</strong><br/>
+          <strong style="color: var(--text-primary);">${escapeHtml(name)}</strong><br/>
           Status: <span style="font-weight: 700; color: ${status === "transit" ? "var(--danger)" : "var(--success)"};">${status}</span><br/>
-          Speed: ${status === "transit" ? "48.2" : "0.0"} km/h<br/>
-          Heading: North-East (NE)<br/>
-          Est. ETA: ${status === "transit" ? "4 mins" : "Standby"}<br/>
-          Last Ping: ${new Date().toLocaleTimeString()}
+          Location: last operator-provided coordinates<br/>
+          Live tracking provider is not connected.
         </div>
       `;
 
@@ -256,7 +255,7 @@ export default function MapView({ hospitals, selectedHospital, onSelectHospital,
     });
   }, [ambulances]);
 
-  // Traffic Bypass Layer rendering
+  // Demo Traffic Bypass Layer rendering
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;

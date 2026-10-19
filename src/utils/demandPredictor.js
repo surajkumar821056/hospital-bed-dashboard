@@ -1,9 +1,9 @@
 // Demand Predictor & Emergency Triage AI Module for MedResQ Health
-import { getDynamicAddress } from "./mockData";
+
 
 /**
  * Classifies patient symptoms into Emergency Severity Index (ESI) categories
- * using a token-likelihood matching classifier.
+ * using demo keyword rules.
  * @param {string} text - User inputted symptoms description
  * @returns {Object} Classified results containing category, severity indicator, and optimal bed requirements
  */
@@ -70,8 +70,8 @@ export const classifyEmergency = (text) => {
  */
 export const predictQueueWaitTime = (hospital, bedType = "general") => {
   const doctors = 6; // Default operational resources
-  const availableBeds = hospital.beds[bedType]?.available || 5;
-  const capacity = hospital.beds[bedType]?.total || 20;
+  const availableBeds = hospital.beds[bedType]?.available ?? 0;
+  const capacity = hospital.beds[bedType]?.total ?? 0;
   
   // Occupancy factor
   const utilization = capacity > 0 ? (capacity - availableBeds) / capacity : 0.7;
@@ -93,101 +93,19 @@ export const predictQueueWaitTime = (hospital, bedType = "general") => {
   return Math.max(5, Math.min(180, waitTimeMinutes));
 };
 
-/**
- * Trains a Simple Linear Regression model on 30 days of mock historical occupancy,
- * then forecasts occupancy rates and spike risks for the next 7 days.
- * @param {Array} hospitals - The list of hospitals
- * @param {string} bedType - Bed filter
- * @returns {Array} 7-day prediction list
- */
+/** Capacity baseline from current persisted inventory; no synthetic history or trained forecast. */
 export const getOccupancyForecast = (hospitals, bedType = "all") => {
-  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const currentDayIndex = new Date().getDay();
-  
-  // Calculate total capacities across municipal hospitals
-  let totalCapacity = 0;
-  let totalAvailable = 0;
-  
-  hospitals.forEach(h => {
-    if (bedType === "all") {
-      Object.keys(h.beds).forEach(type => {
-        totalCapacity += h.beds[type].total;
-        totalAvailable += h.beds[type].available;
-      });
-    } else if (h.beds[bedType]) {
-      totalCapacity += h.beds[bedType].total;
-      totalAvailable += h.beds[bedType].available;
-    }
+  let capacity = 0, available = 0;
+  for (const h of hospitals) for (const [type, bed] of Object.entries(h.beds)) {
+    if (bed && (bedType === "all" || type === bedType)) { capacity += bed.total; available += bed.available; }
+  }
+  const occupied = capacity - available;
+  const occupancyRate = capacity ? Math.round(occupied / capacity * 100) : 0;
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(); day.setDate(day.getDate() + i);
+    return { day: day.toLocaleDateString('en', { weekday: 'short' }), capacity, occupied, available, occupancyRate,
+      spikeProbability: occupancyRate, status: occupancyRate > 85 ? "Critical" : occupancyRate > 70 ? "Warning" : "Normal" };
   });
-  
-  const currentOccupied = totalCapacity - totalAvailable;
-  const baseOccupancyRate = totalCapacity > 0 ? currentOccupied / totalCapacity : 0.7;
-
-  // 1. Generate 30 days of historical training rates incorporating cyclical factors
-  const historyDays = 30;
-  const historyRates = [];
-  for (let i = 0; i < historyDays; i++) {
-    const t = i - historyDays;
-    const weeklyCycle = 0.06 * Math.sin((t / 7) * Math.PI * 2); // Sine seasonality
-    const trend = 0.0015 * t; // Long-term linear trend
-    const noise = (Math.random() * 0.04) - 0.02;
-    historyRates.push(baseOccupancyRate + weeklyCycle + trend + noise);
-  }
-
-  // 2. Train Simple Linear Regression model (fit slope and intercept parameters)
-  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-  const n = historyRates.length;
-  for (let i = 0; i < n; i++) {
-    const x = i - historyDays;
-    const y = historyRates[i];
-    sumX += x;
-    sumY += y;
-    sumXY += x * y;
-    sumXX += x * x;
-  }
-  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
-  const intercept = (sumY - slope * sumX) / n;
-
-  // 3. Project 7 days forward using the trained model parameters + weekly cycles
-  const forecasts = [];
-  for (let i = 0; i < 7; i++) {
-    const forecastDayIndex = (currentDayIndex + i) % 7;
-    const dayName = daysOfWeek[forecastDayIndex];
-    
-    const xFuture = i;
-    const regressionBaseline = slope * xFuture + intercept;
-
-    // Apply weekly cycle factor (peak midweek, dips on weekends)
-    let cycleFactor = 1.0;
-    if (forecastDayIndex >= 2 && forecastDayIndex <= 4) {
-      cycleFactor = 1.06; // Peak midweek
-    } else if (forecastDayIndex === 0 || forecastDayIndex === 6) {
-      cycleFactor = 0.94; // Weekend dip
-    }
-
-    let predictedRate = regressionBaseline * cycleFactor;
-    predictedRate = Math.max(0.1, Math.min(0.98, predictedRate));
-
-    const projectedOccupied = Math.round(totalCapacity * predictedRate);
-    const projectedAvailable = totalCapacity - projectedOccupied;
-    
-    // Saturation spike probability equation
-    const spikeProb = Math.round(
-      Math.min(99, Math.max(1, (predictedRate * 100) - 20 + Math.random() * 10))
-    );
-
-    forecasts.push({
-      day: dayName,
-      occupied: projectedOccupied,
-      available: projectedAvailable,
-      capacity: totalCapacity,
-      occupancyRate: Math.round(predictedRate * 100),
-      spikeProbability: spikeProb,
-      status: predictedRate > 0.85 ? "Critical" : predictedRate > 0.7 ? "Warning" : "Normal"
-    });
-  }
-  
-  return forecasts;
 };
 
 /**

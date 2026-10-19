@@ -75,6 +75,12 @@ export default function Header({ activeTab, setActiveTab, isDark, setIsDark, lan
 
 
       {/* Top Right Controls & Metadata */}
+      <nav style={{ display: "flex", gap: "6px", flexWrap: "wrap" }} aria-label="Dashboard navigation">
+        {[['patient', 'Hospitals'], ['emergency', 'Routing'], ['analytics', 'Analytics']].map(([tab, label]) => (
+          <button key={tab} className={`btn ${activeTab === tab ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setActiveTab(tab)}>{label}</button>
+        ))}
+        {alarmCount > 0 && <span style={{ fontSize: "0.7rem" }}>{alarmCount} capacity alerts</span>}
+      </nav>
       <div className="header-actions" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
         
         {/* Region Switcher */}

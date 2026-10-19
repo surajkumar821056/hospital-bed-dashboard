@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS workflow_lock (id INTEGER PRIMARY KEY);
+INSERT INTO workflow_lock (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM workflow_lock WHERE id = 1);
+CREATE TABLE IF NOT EXISTS documents (
+  kind VARCHAR(40) NOT NULL,
+  id VARCHAR(512) NOT NULL,
+  payload TEXT NOT NULL,
+  PRIMARY KEY (kind, id)
+);
+CREATE TABLE IF NOT EXISTS accounts (
+  email VARCHAR(255) PRIMARY KEY,
+  password_hash VARCHAR(100) NOT NULL,
+  hospital_id VARCHAR(100)
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash VARCHAR(64) PRIMARY KEY,
+  user_json TEXT NOT NULL,
+  expires_at BIGINT NOT NULL
+);

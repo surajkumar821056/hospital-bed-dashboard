@@ -1,0 +1,24 @@
+CREATE TABLE IF NOT EXISTS workflow_lock (
+  id INT PRIMARY KEY
+) ENGINE=InnoDB;
+INSERT IGNORE INTO workflow_lock (id) VALUES (1);
+
+CREATE TABLE IF NOT EXISTS documents (
+  kind VARCHAR(40) NOT NULL,
+  id VARCHAR(512) NOT NULL,
+  payload LONGTEXT NOT NULL,
+  PRIMARY KEY (kind, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS accounts (
+  email VARCHAR(255) PRIMARY KEY,
+  password_hash VARCHAR(100) NOT NULL,
+  hospital_id VARCHAR(100)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash VARCHAR(64) PRIMARY KEY,
+  user_json TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  INDEX sessions_expiry (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

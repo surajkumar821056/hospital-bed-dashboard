@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { LogIn, LogOut, Settings, Save, FileText, ShieldAlert, AlertCircle, CheckCircle, TrendingUp, Plus, Activity, Clock } from "lucide-react";
+import { api } from "../api/client";
 import { getBedTypeLabel } from "../utils/mockData";
 
-export default function AdminPortal({ hospitals, onUpdateHospital, lang, referrals, setReferrals, setNotifications, onClose, currentUser, setCurrentUser }) {
+export default function AdminPortal({ hospitals, onUpdateHospital, lang, referrals, onTransition, sosRequests = [], onRefresh, onClose, currentUser, setCurrentUser }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -12,13 +13,18 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
   // Form states
   const [bedsForm, setBedsForm] = useState({});
   const [profileForm, setProfileForm] = useState({ name: "", phone: "", address: "", email: "" });
+  const [formDirty, setFormDirty] = useState(false);
+  const [formVersion, setFormVersion] = useState(0);
   const [workflowTab, setWorkflowTab] = useState("incoming");
 
   useEffect(() => {
     if (currentUser && currentUser.role === "admin") {
       setIsLoggedIn(true);
-      const matchedHosp = hospitals.find(h => h.email.toLowerCase() === currentUser.email.toLowerCase()) || hospitals.find(h => h.id === "HOSP_001") || hospitals[0];
+      const matchedHosp = hospitals.find(h => h.id === currentUser.hospitalId) || hospitals.find(h => h.id === activeHospitalId) || hospitals[0];
+      if (!matchedHosp) return;
       setActiveHospitalId(matchedHosp.id);
+      if (formDirty) return;
+      setFormVersion(matchedHosp.version);
       setBedsForm(matchedHosp.beds);
       setProfileForm({
         name: matchedHosp.name,
@@ -29,7 +35,7 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
     } else {
       setIsLoggedIn(false);
     }
-  }, [currentUser, hospitals]);
+  }, [currentUser, hospitals, activeHospitalId, formDirty]);
 
   // Translations
   const trans = {
@@ -40,7 +46,7 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
       passLabel: "Access Password",
       btnLogIn: "Authorize Session",
       btnLogOut: "Log Out",
-      invalidCreds: "Invalid credentials. Hint: use any admin email from mockData (e.g. emergency@aiims.edu) and password 'admin'",
+      invalidCreds: "Invalid email or password. Use the credentials configured on the backend.",
       welcome: "Welcome,",
       manageInventory: "Manage Live Bed Inventory",
       editProfile: "Manage Hospital Profile",
@@ -77,160 +83,41 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
 
   const t = trans[lang] || trans.en;
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    setErrorMsg("");
-
-    const matchedHosp = hospitals.find(h => h.email.toLowerCase() === email.toLowerCase());
-    if (matchedHosp && password === "admin") {
-      setIsLoggedIn(true);
-      setActiveHospitalId(matchedHosp.id);
-      setBedsForm(matchedHosp.beds);
-      setProfileForm({
-        name: matchedHosp.name,
-        phone: matchedHosp.phone,
-        address: matchedHosp.address,
-        email: matchedHosp.email
-      });
-      if (setCurrentUser) {
-        setCurrentUser({
-          name: "Hospital Admin",
-          email: matchedHosp.email,
-          role: "admin"
-        });
-      }
-    } else {
-      setErrorMsg(t.invalidCreds);
-    }
+  const [saving, setSaving] = useState(false);
+  const handleLogin = async e => {
+    e.preventDefault(); setErrorMsg(""); setSaving(true);
+    try { const user = await api.login(email, password); await setCurrentUser(user); }
+    catch (error) { setErrorMsg(error.message); }
+    finally { setSaving(false); }
   };
-
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setActiveHospitalId(null);
-    setEmail("");
-    setPassword("");
-    if (setCurrentUser) setCurrentUser(null);
+  const handleLogout = async () => {
+    await setCurrentUser(null);
+    setIsLoggedIn(false); setActiveHospitalId(null); setEmail(""); setPassword("");
     window.location.hash = "";
     if (onClose) onClose();
   };
-
-  const handleApproveReferral = (ref) => {
-    if (!activeHospital) return;
-    const currentAvailable = activeHospital.beds[ref.bedType]?.available || 0;
-    if (currentAvailable <= 0) {
-      alert("Error: No available beds of this type to allocate!");
-      return;
-    }
-
-    // 1. Deduct bed count in hospital object
-    const updatedBeds = {
-      ...activeHospital.beds,
-      [ref.bedType]: {
-        ...activeHospital.beds[ref.bedType],
-        available: currentAvailable - 1
-      }
-    };
-
-    const updatedHospital = {
-      ...activeHospital,
-      beds: updatedBeds,
-      lastUpdated: new Date().toISOString()
-    };
-
-    // 2. Trigger parent update
-    onUpdateHospital(updatedHospital);
-    // Sync local form state
-    setBedsForm(updatedBeds);
-
-    // 3. Update referral status to approved
-    setReferrals(prev => prev.map(r => r.id === ref.id ? { ...r, status: "approved" } : r));
-
-    // 4. Send dynamic notification in app
-    setNotifications(prev => [
-      {
-        id: `REF_APR_${Date.now()}`,
-        text: `🚨 REFERRAL CONFIRMED: ${ref.patientName} allocated ${ref.bedType.toUpperCase()} bed at ${activeHospital.name}. Rescue ambulance dispatched!`,
-        time: "Just now",
-        unread: true
-      },
-      ...prev
-    ]);
-
-    alert(`Referral Approved! ${ref.bedType.toUpperCase()} bed allocated at ${activeHospital.name}. Ambulance dispatched.`);
+  const runTransition = async (id, status) => {
+    if (saving) return;
+    setSaving(true); setErrorMsg("");
+    try { await onTransition(id, status); setFormDirty(false); }
+    catch (error) { setErrorMsg(error.message); }
+    finally { setSaving(false); }
   };
-
-  const handleDeclineReferral = (refId) => {
-    setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: "rejected" } : r));
-
-    setNotifications(prev => [
-      {
-        id: `REF_DEC_${Date.now()}`,
-        text: `🟢 Booking request declined by ${activeHospital.name}.`,
-        time: "Just now",
-        unread: true
-      },
-      ...prev
-    ]);
-  };
-
-  const handleAdmitPatient = (refId) => {
-    setReferrals(prev => prev.map(r => r.id === refId ? { ...r, status: "admitted" } : r));
-    
-    setNotifications(prev => [
-      {
-        id: `ADMIT_${Date.now()}`,
-        text: `🏥 ADMITTED: Patient arrived at ${activeHospital.name} and successfully admitted.`,
-        time: "Just now",
-        unread: true
-      },
-      ...prev
-    ]);
-  };
-
-  const handleDischargePatient = (ref) => {
-    if (!activeHospital) return;
-    const currentAvailable = activeHospital.beds[ref.bedType]?.available || 0;
-    const currentTotal = activeHospital.beds[ref.bedType]?.total || 1;
-
-    // Increment available bed count (release reservation)
-    const updatedBeds = {
-      ...activeHospital.beds,
-      [ref.bedType]: {
-        ...activeHospital.beds[ref.bedType],
-        available: Math.min(currentTotal, currentAvailable + 1)
-      }
-    };
-
-    const updatedHospital = {
-      ...activeHospital,
-      beds: updatedBeds,
-      lastUpdated: new Date().toISOString()
-    };
-
-    onUpdateHospital(updatedHospital);
-    setBedsForm(updatedBeds);
-
-    setReferrals(prev => prev.map(r => r.id === ref.id ? { ...r, status: "discharged" } : r));
-
-    setNotifications(prev => [
-      {
-        id: `DISCH_${Date.now()}`,
-        text: `🟢 DISCHARGED: ${ref.patientName} discharged from ${activeHospital.name}. Bed released back to inventory.`,
-        time: "Just now",
-        unread: true
-      },
-      ...prev
-    ]);
-  };
+  const handleApproveReferral = ref => runTransition(ref.id, "approved");
+  const handleDeclineReferral = id => runTransition(id, "rejected");
+  const handleAdmitPatient = id => runTransition(id, "admitted");
+  const handleDischargePatient = ref => runTransition(ref.id, "discharged");
+  const handleAcceptReferral = id => runTransition(id, "approved");
 
   const activeHospital = hospitals.find(h => h.id === activeHospitalId);
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!activeHospital) return;
 
     const updated = {
       ...activeHospital,
+      version: formVersion,
       name: profileForm.name,
       phone: profileForm.phone,
       address: profileForm.address,
@@ -238,11 +125,13 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
       lastUpdated: new Date().toISOString()
     };
 
-    onUpdateHospital(updated);
-    alert(t.successMsg);
+    setSaving(true); setErrorMsg("");
+    try { await onUpdateHospital(updated); setFormDirty(false); alert(t.successMsg); }
+    catch (error) { setErrorMsg(error.message); }
+    finally { setSaving(false); }
   };
 
-  const handleSaveBeds = (e) => {
+  const handleSaveBeds = async (e) => {
     e.preventDefault();
     if (!activeHospital) return;
 
@@ -266,32 +155,15 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
 
     const updated = {
       ...activeHospital,
+      version: formVersion,
       beds: updatedBeds,
       lastUpdated: new Date().toISOString()
     };
 
-    onUpdateHospital(updated);
-    alert(t.successMsg);
-  };
-
-  const handleAcceptReferral = (id) => {
-    setReferrals(prev => prev.map(r => r.id === id ? { ...r, status: "accepted" } : r));
-    
-    // Auto-update bed counts to simulate bed allocation
-    if (bedsForm.icu && bedsForm.icu.available > 0) {
-      const updatedBeds = {
-        ...bedsForm,
-        icu: { ...bedsForm.icu, available: bedsForm.icu.available - 1 }
-      };
-      setBedsForm(updatedBeds);
-      
-      const updated = {
-        ...activeHospital,
-        beds: updatedBeds,
-        lastUpdated: new Date().toISOString()
-      };
-      onUpdateHospital(updated);
-    }
+    setSaving(true); setErrorMsg("");
+    try { await onUpdateHospital(updated); setFormDirty(false); alert(t.successMsg); }
+    catch (error) { setErrorMsg(error.message); }
+    finally { setSaving(false); }
   };
 
   // Render Login Panel
@@ -342,7 +214,7 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
             </div>
           )}
 
-          <button type="submit" className="btn btn-primary" style={{ width: "100%", padding: "0.75rem" }}>
+          <button type="submit" disabled={saving} className="btn btn-primary" style={{ width: "100%", padding: "0.75rem" }}>
             <LogIn size={16} />
             <span>{t.btnLogIn}</span>
           </button>
@@ -353,6 +225,11 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
       </div>
     );
   }
+
+  if (!activeHospital) return <div style={{ padding: "2rem" }}>
+    <h2>No hospital records available</h2><p>Provision hospitals with the officer API before using this console.</p>
+    <button className="btn btn-secondary" onClick={handleLogout}>Log out</button>
+  </div>;
 
   // Render Admin Console
   const localAlerts = [];
@@ -384,6 +261,22 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
       gap: "1.5rem",
       boxSizing: "border-box"
     }}>
+      {errorMsg && <p role="alert" style={{ color: "var(--danger)" }}>{errorMsg}</p>}
+      {saving && <p>Saving...</p>}
+      {!currentUser?.hospitalId && sosRequests.length > 0 && <div className="glass" style={{ padding: 12 }}>
+        <strong>SOS operator queue</strong>
+        {sosRequests.filter(s => ["pending", "acknowledged"].includes(s.status)).map(s => <p key={s.id}>
+          {s.owner}: {s.coords.lat.toFixed(4)}, {s.coords.lng.toFixed(4)} ({s.status})
+          <button className="btn btn-secondary" disabled={saving} onClick={async () => {
+            setSaving(true); setErrorMsg("");
+            try { await api.respondSos(s.id, s.status === "pending" ? "acknowledged" : "resolved"); await onRefresh(); }
+            catch (error) { setErrorMsg(error.message); } finally { setSaving(false); }
+          }}>{s.status === "pending" ? "Acknowledge" : "Resolve"}</button>
+        </p>)}
+      </div>}
+      {!currentUser?.hospitalId && <label>Manage hospital: <select value={activeHospitalId || ""} onChange={e => { setFormDirty(false); setActiveHospitalId(e.target.value); }}>
+        {hospitals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+      </select></label>}
       {/* Standalone Control Center Banner */}
       <div className="glass" style={{
         display: "flex",
@@ -502,10 +395,10 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
                     min="0"
                     className="form-input"
                     value={bedsForm[bedType]?.available || 0}
-                    onChange={(e) => setBedsForm({
+                    onChange={(e) => { setFormDirty(true); setBedsForm({
                       ...bedsForm,
                       [bedType]: { ...bedsForm[bedType], available: parseInt(e.target.value) || 0 }
-                    })}
+                    }); }}
                   />
                 </div>
 
@@ -513,19 +406,19 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
                   <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)" }}>CAPACITY</span>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     className="form-input"
                     value={bedsForm[bedType]?.total || 0}
-                    onChange={(e) => setBedsForm({
+                    onChange={(e) => { setFormDirty(true); setBedsForm({
                       ...bedsForm,
                       [bedType]: { ...bedsForm[bedType], total: parseInt(e.target.value) || 0 }
-                    })}
+                    }); }}
                   />
                 </div>
               </div>
             ))}
 
-            <button type="submit" className="btn btn-primary" style={{ marginTop: "1rem", alignSelf: "flex-end" }}>
+            <button type="submit" disabled={saving} className="btn btn-primary" style={{ marginTop: "1rem", alignSelf: "flex-end" }}>
               <Save size={16} />
               <span>{t.saveBtn}</span>
             </button>
@@ -788,7 +681,7 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
                   required
                   className="form-input"
                   value={profileForm.name}
-                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                  onChange={(e) => { setFormDirty(true); setProfileForm({ ...profileForm, name: e.target.value }); }}
                 />
               </div>
 
@@ -799,7 +692,7 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
                   required
                   className="form-input"
                   value={profileForm.phone}
-                  onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                  onChange={(e) => { setFormDirty(true); setProfileForm({ ...profileForm, phone: e.target.value }); }}
                 />
               </div>
 
@@ -810,11 +703,11 @@ export default function AdminPortal({ hospitals, onUpdateHospital, lang, referra
                   required
                   className="form-input"
                   value={profileForm.address}
-                  onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+                  onChange={(e) => { setFormDirty(true); setProfileForm({ ...profileForm, address: e.target.value }); }}
                 />
               </div>
 
-              <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-end" }}>
+              <button type="submit" disabled={saving} className="btn btn-primary" style={{ alignSelf: "flex-end" }}>
                 <Save size={16} />
                 <span>{t.saveBtn}</span>
               </button>

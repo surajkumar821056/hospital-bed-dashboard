@@ -11,6 +11,18 @@ node_modules
 dist
 dist-ssr
 *.local
+.maven-cache/
+.maven-home/
+backend/target/
+backend/data/
+backend/.mvn/wrapper/maven-wrapper.jar
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Editor directories and files
 .vscode/*

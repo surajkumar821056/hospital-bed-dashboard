@@ -1,0 +1,595 @@
+[
+  {
+    "id": "HOSP_001",
+    "name": "AIIMS New Delhi",
+    "address": "Ansari Nagar, New Delhi, Delhi 110029",
+    "lat": 28.5672,
+    "lng": 77.21,
+    "phone": "+91 11 2658 8500",
+    "email": "emergency@aiims.edu",
+    "lastUpdated": "2026-10-10T18:50:49.996Z",
+    "beds": {
+      "general": {
+        "total": 150,
+        "available": 42
+      },
+      "icu": {
+        "total": 40,
+        "available": 4
+      },
+      "picu": {
+        "total": 20,
+        "available": 6
+      },
+      "nicu": {
+        "total": 25,
+        "available": 11
+      },
+      "ventilator": {
+        "total": 30,
+        "available": 3
+      },
+      "isolation": {
+        "total": 20,
+        "available": 8
+      }
+    },
+    "version": 0,
+    "rating": "4.9",
+    "specialists": [
+      "Cardiologist",
+      "Neurologist",
+      "ICU Specialist"
+    ],
+    "logoBg": "#2563eb",
+    "type": "government",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_002",
+    "name": "Safdarjung Hospital Delhi",
+    "address": "Ansari Nagar East, New Delhi, Delhi 110029",
+    "lat": 28.5684,
+    "lng": 77.2072,
+    "phone": "+91 11 2673 0000",
+    "email": "admin@safdarjunghospital.gov.in",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 100,
+        "available": 12
+      },
+      "icu": {
+        "total": 25,
+        "available": 2
+      },
+      "picu": {
+        "total": 10,
+        "available": 1
+      },
+      "nicu": {
+        "total": 15,
+        "available": 3
+      },
+      "ventilator": {
+        "total": 15,
+        "available": 1
+      },
+      "isolation": {
+        "total": 15,
+        "available": 2
+      }
+    },
+    "version": 0,
+    "rating": "4.7",
+    "specialists": [
+      "Pediatrician",
+      "Trauma Surgeon",
+      "Orthopedic"
+    ],
+    "logoBg": "#10b981",
+    "type": "government",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_003",
+    "name": "Max Super Speciality Hospital Saket",
+    "address": "Press Enclave Marg, Saket, New Delhi, Delhi 110017",
+    "lat": 28.5284,
+    "lng": 77.2114,
+    "phone": "+91 11 2651 5050",
+    "email": "info@maxhealthcare.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 80,
+        "available": 28
+      },
+      "icu": {
+        "total": 15,
+        "available": 8
+      },
+      "picu": {
+        "total": 5,
+        "available": 3
+      },
+      "nicu": {
+        "total": 10,
+        "available": 7
+      },
+      "ventilator": {
+        "total": 8,
+        "available": 4
+      },
+      "isolation": {
+        "total": 12,
+        "available": 5
+      }
+    },
+    "version": 0,
+    "rating": "4.8",
+    "specialists": [
+      "Cardiac Surgeon",
+      "Pulmonologist",
+      "General ICU"
+    ],
+    "logoBg": "#f59e0b",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_004",
+    "name": "Fortis Hospital Noida",
+    "address": "B-22, Sector 62, Noida, Uttar Pradesh 201301",
+    "lat": 28.6189,
+    "lng": 77.3734,
+    "phone": "+91 120 430 0222",
+    "email": "contact@fortisnoida.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 120,
+        "available": 55
+      },
+      "icu": {
+        "total": 30,
+        "available": 12
+      },
+      "picu": {
+        "total": 15,
+        "available": 9
+      },
+      "nicu": {
+        "total": 20,
+        "available": 15
+      },
+      "ventilator": {
+        "total": 20,
+        "available": 8
+      },
+      "isolation": {
+        "total": 10,
+        "available": 7
+      }
+    },
+    "version": 0,
+    "rating": "4.6",
+    "specialists": [
+      "Anesthesiologist",
+      "General Surgeon",
+      "Internist"
+    ],
+    "logoBg": "#8b5cf6",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_005",
+    "name": "Sharda Hospital Greater Noida",
+    "address": "Plot 32, Knowledge Park III, Greater Noida, Uttar Pradesh 201306",
+    "lat": 28.4731,
+    "lng": 77.4828,
+    "phone": "+91 120 232 9700",
+    "email": "info@shardahospital.org",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 90,
+        "available": 8
+      },
+      "icu": {
+        "total": 20,
+        "available": 1
+      },
+      "picu": {
+        "total": 8,
+        "available": 0
+      },
+      "nicu": {
+        "total": 12,
+        "available": 2
+      },
+      "ventilator": {
+        "total": 10,
+        "available": 0
+      },
+      "isolation": {
+        "total": 8,
+        "available": 1
+      }
+    },
+    "version": 0,
+    "rating": "4.5",
+    "specialists": [
+      "Trauma Specialist",
+      "Physician",
+      "Cardiac Care"
+    ],
+    "logoBg": "#ec4899",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_006",
+    "name": "Kailash Hospital Greater Noida",
+    "address": "Plot 23, Knowledge Park I, Greater Noida, Uttar Pradesh 201310",
+    "lat": 28.4789,
+    "lng": 77.4912,
+    "phone": "+91 120 232 7700",
+    "email": "kailash@kailashhospital.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 110,
+        "available": 45
+      },
+      "icu": {
+        "total": 25,
+        "available": 6
+      },
+      "picu": {
+        "total": 10,
+        "available": 4
+      },
+      "nicu": {
+        "total": 15,
+        "available": 9
+      },
+      "ventilator": {
+        "total": 12,
+        "available": 3
+      },
+      "isolation": {
+        "total": 10,
+        "available": 6
+      }
+    },
+    "version": 0,
+    "rating": "4.7",
+    "specialists": [
+      "ICU Specialist",
+      "Trauma Surgeon",
+      "Orthopedic"
+    ],
+    "logoBg": "#10b981",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_007",
+    "name": "Jaypee Hospital Noida",
+    "address": "Wish Town, Sector 128, Noida, Uttar Pradesh 201304",
+    "lat": 28.5147,
+    "lng": 77.3712,
+    "phone": "+91 120 412 2222",
+    "email": "emergency@jaypeehealthcare.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 130,
+        "available": 35
+      },
+      "icu": {
+        "total": 35,
+        "available": 14
+      },
+      "picu": {
+        "total": 12,
+        "available": 8
+      },
+      "nicu": {
+        "total": 18,
+        "available": 11
+      },
+      "ventilator": {
+        "total": 15,
+        "available": 7
+      },
+      "isolation": {
+        "total": 12,
+        "available": 9
+      }
+    },
+    "version": 0,
+    "rating": "4.8",
+    "specialists": [
+      "Cardiac Surgeon",
+      "Anesthesiologist",
+      "Pulmonologist"
+    ],
+    "logoBg": "#ec4899",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_008",
+    "name": "Medanta - The Medicity Gurugram",
+    "address": "Sector 38, Gurugram, Haryana 122001",
+    "lat": 28.4312,
+    "lng": 77.0425,
+    "phone": "+91 124 414 1414",
+    "email": "info@medanta.org",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 200,
+        "available": 48
+      },
+      "icu": {
+        "total": 50,
+        "available": 18
+      },
+      "picu": {
+        "total": 15,
+        "available": 5
+      },
+      "nicu": {
+        "total": 20,
+        "available": 12
+      },
+      "ventilator": {
+        "total": 25,
+        "available": 10
+      },
+      "isolation": {
+        "total": 15,
+        "available": 8
+      }
+    },
+    "version": 0,
+    "rating": "4.9",
+    "specialists": [
+      "Cardiologist",
+      "Pulmonologist",
+      "ICU Specialist"
+    ],
+    "logoBg": "#3b82f6",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_009",
+    "name": "Sir Ganga Ram Hospital New Delhi",
+    "address": "Sir Ganga Ram Hospital Marg, Rajinder Nagar, New Delhi, Delhi 110060",
+    "lat": 28.6382,
+    "lng": 77.1895,
+    "phone": "+91 11 2575 0000",
+    "email": "gangaram@sgrh.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 140,
+        "available": 22
+      },
+      "icu": {
+        "total": 30,
+        "available": 5
+      },
+      "picu": {
+        "total": 10,
+        "available": 3
+      },
+      "nicu": {
+        "total": 15,
+        "available": 8
+      },
+      "ventilator": {
+        "total": 15,
+        "available": 2
+      },
+      "isolation": {
+        "total": 12,
+        "available": 4
+      }
+    },
+    "version": 0,
+    "rating": "4.8",
+    "specialists": [
+      "Nephrologist",
+      "Internal Medicine",
+      "ICU Specialist"
+    ],
+    "logoBg": "#eab308",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_010",
+    "name": "Indraprastha Apollo Hospitals New Delhi",
+    "address": "Sarita Vihar, Delhi Mathura Road, New Delhi, Delhi 110076",
+    "lat": 28.5361,
+    "lng": 77.2861,
+    "phone": "+91 11 2987 1090",
+    "email": "apollo_delhi@apollohospitals.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 180,
+        "available": 40
+      },
+      "icu": {
+        "total": 45,
+        "available": 11
+      },
+      "picu": {
+        "total": 15,
+        "available": 7
+      },
+      "nicu": {
+        "total": 20,
+        "available": 14
+      },
+      "ventilator": {
+        "total": 20,
+        "available": 6
+      },
+      "isolation": {
+        "total": 15,
+        "available": 9
+      }
+    },
+    "version": 0,
+    "rating": "4.8",
+    "specialists": [
+      "Emergency Physician",
+      "Trauma Surgeon",
+      "ICU Specialist"
+    ],
+    "logoBg": "#a855f7",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "bloodBank",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_011",
+    "name": "Fortis Escorts Heart Institute New Delhi",
+    "address": "Okhla Road, Sukhdev Vihar, New Delhi, Delhi 110025",
+    "lat": 28.5587,
+    "lng": 77.2783,
+    "phone": "+91 11 4713 5000",
+    "email": "contact.escorts@fortishealthcare.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 100,
+        "available": 15
+      },
+      "icu": {
+        "total": 25,
+        "available": 3
+      },
+      "picu": {
+        "total": 0,
+        "available": 0
+      },
+      "nicu": {
+        "total": 0,
+        "available": 0
+      },
+      "ventilator": {
+        "total": 12,
+        "available": 1
+      },
+      "isolation": {
+        "total": 0,
+        "available": 0
+      }
+    },
+    "version": 0,
+    "rating": "4.7",
+    "specialists": [
+      "Cardiac Care Specialist",
+      "Interventional Cardiologist"
+    ],
+    "logoBg": "#ef4444",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "pharmacy"
+    ]
+  },
+  {
+    "id": "HOSP_012",
+    "name": "Metro Hospital & Heart Institute Noida",
+    "address": "X-1, Sector 12, Noida, Uttar Pradesh 201301",
+    "lat": 28.5912,
+    "lng": 77.3325,
+    "phone": "+91 120 422 6666",
+    "email": "info@metrohospitals.com",
+    "lastUpdated": "2026-10-10T18:50:49.997Z",
+    "beds": {
+      "general": {
+        "total": 110,
+        "available": 32
+      },
+      "icu": {
+        "total": 20,
+        "available": 7
+      },
+      "picu": {
+        "total": 8,
+        "available": 4
+      },
+      "nicu": {
+        "total": 12,
+        "available": 8
+      },
+      "ventilator": {
+        "total": 10,
+        "available": 4
+      },
+      "isolation": {
+        "total": 8,
+        "available": 5
+      }
+    },
+    "version": 0,
+    "rating": "4.6",
+    "specialists": [
+      "General ICU Specialist",
+      "Anesthesiologist"
+    ],
+    "logoBg": "#f43f5e",
+    "type": "private",
+    "resources": [
+      "oxygen",
+      "pharmacy"
+    ]
+  }
+]
